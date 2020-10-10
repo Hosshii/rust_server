@@ -10,7 +10,7 @@ fn main() {
 
     for stream in listener.incoming() {
         let stream = stream.unwrap();
-        let pool = ThreadPool::new(4).unwrap();
+        let pool = ThreadPool::new(1).unwrap();
 
         pool.execute(|| {
             handle_connection(stream);
