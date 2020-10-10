@@ -1,4 +1,4 @@
-use single::ThreadPool;
+use rust_server::server::Server;
 use std::fs::File;
 use std::io::prelude::*;
 use std::net::{TcpListener, TcpStream};
@@ -6,15 +6,27 @@ use std::thread;
 use std::time::Duration;
 
 fn main() {
-    let listener = TcpListener::bind("127.0.0.1:7878").unwrap();
-    let pool = ThreadPool::new(1).unwrap();
+    let mut s = Server::new(8);
+    let a = index;
+    s.GET("/", &index);
+    s.start(8080);
+}
 
-    for stream in listener.incoming() {
-        let stream = stream.unwrap();
-        pool.execute(|| {
-            handle_connection(stream);
-        });
-    }
+fn index(mut stream: TcpStream) -> Result<(), String> {
+    println!("received");
+    let mut buffer = [0; 1024];
+    stream.read(&mut buffer).unwrap();
+    let (status_line, filename) = ("HTTP/1.1 200 OK\r\n\r\n", "hello.html");
+    let mut file = File::open(filename).unwrap();
+
+    let mut contents = String::new();
+    file.read_to_string(&mut contents).unwrap();
+
+    let response = format!("{}{}", status_line, contents);
+
+    stream.write(response.as_bytes()).unwrap();
+    stream.flush().unwrap();
+    Ok(())
 }
 
 fn handle_connection(mut stream: TcpStream) {
