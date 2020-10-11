@@ -1,6 +1,7 @@
 use crate::worker::{PoolCreationErr, ThreadPool};
 use std::collections::HashMap;
 use std::fmt;
+use std::fs::File;
 use std::io::prelude::*;
 use std::net::{TcpListener, TcpStream};
 
@@ -43,25 +44,18 @@ impl Server {
         let listener = TcpListener::bind(address).unwrap();
         for stream in listener.incoming() {
             let mut stream = stream.unwrap();
-            println!("before parce");
             self.parce(&mut stream)
                 .and_then(|h| {
                     let get = GET.to_string();
-                    let a = self.get_handle[&h.header.path];
-                    // let b: fn(TcpStream) = handle_connection;
-                    // let c = || a(stream);
-                    // let d = move || b(stream);
-                    println!("before pool");
-                    self.pool
-                        // .execute(|| (self.get_handle.get(&h.path).unwrap())(stream));
-                        .execute(move || a(stream));
-                    // .execute(|| handle_connection(stream));
-                    // .execute(|| crate::index());
+                    let handle = *match &h.header.method {
+                        get => self
+                            .get_handle
+                            .get(&h.header.path)
+                            .unwrap_or_else(|| &(not_found as fn(TcpStream))),
+                        _ => &(not_found as fn(TcpStream)),
+                    };
+                    self.pool.execute(move || handle(stream));
                     Ok(())
-                    // match &h.path {
-                    //     get => (self.get_handle.get(&h.path).unwrap())(stream),
-                    //     _ => Ok(()),
-                    // }
                 })
                 .unwrap();
         }
@@ -74,7 +68,6 @@ impl Server {
     fn parce(&self, stream: &mut TcpStream) -> Result<HttpMessage, String> {
         let mut st = [0; 1024];
         stream.read(&mut st).unwrap();
-        println!("here");
         let mut buf = String::new();
         for i in st.iter() {
             if *i == ('\r' as u8) {
@@ -86,7 +79,11 @@ impl Server {
         let req_info: Vec<&str> = buf.split(" ").collect();
         let test = HttpHeader {
             method: GET.to_string(),
-            path: req_info[1].to_string(),
+            path: if req_info.len() > 1 {
+                req_info[1].to_string()
+            } else {
+                "/".to_string()
+            },
         };
         let msg = HttpMessage {
             header: test,
@@ -105,29 +102,18 @@ impl Server {
     }
 }
 
-pub fn handle_connection(mut stream: TcpStream) {
-    let mut buffer = [0; 1024];
-    stream.read(&mut buffer).unwrap();
+fn not_found(mut stream: TcpStream) {
+    println!("received");
 
-    let get = b"GET / HTTP/1.1\r\n";
-    let sleep = b"GET /sleep HTTP/1.1\r\n";
-
-    let (status_line, filename) = if buffer.starts_with(get) {
-        ("HTTP/1.1 200 OK\r\n\r\n", "hello.html")
-    } else if buffer.starts_with(sleep) {
-        // thread::sleep(Duration::from_secs(5));
-        ("HTTP/1.1 200 OK\r\n\r\n", "hello.html")
-    } else {
-        ("HTTP/1.1 404 Not Found\r\n\r\n", "404.html")
-    };
-
-    // let mut file = File::open(filename).unwrap();
+    let (status_line, filename) = ("HTTP/1.1 404 Not Found\r\n\r\n", "404.html");
+    let mut file = File::open(filename).unwrap();
 
     let mut contents = String::new();
-    // file.read_to_string(&mut contents).unwrap();
+    file.read_to_string(&mut contents).unwrap();
 
     let response = format!("{}{}", status_line, contents);
 
     stream.write(response.as_bytes()).unwrap();
     stream.flush().unwrap();
+    // Ok(())
 }
