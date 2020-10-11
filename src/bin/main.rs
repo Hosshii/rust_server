@@ -8,14 +8,14 @@ use std::time::Duration;
 fn main() {
     let mut s = Server::new(8);
     let a = index;
-    s.GET("/", &index);
+    s.GET("/", index);
     s.start(8080);
+    loop {}
 }
 
-fn index(mut stream: TcpStream) -> Result<(), String> {
+fn index(mut stream: TcpStream) {
     println!("received");
-    let mut buffer = [0; 1024];
-    stream.read(&mut buffer).unwrap();
+
     let (status_line, filename) = ("HTTP/1.1 200 OK\r\n\r\n", "hello.html");
     let mut file = File::open(filename).unwrap();
 
@@ -24,12 +24,13 @@ fn index(mut stream: TcpStream) -> Result<(), String> {
 
     let response = format!("{}{}", status_line, contents);
 
+    println!("here");
     stream.write(response.as_bytes()).unwrap();
     stream.flush().unwrap();
-    Ok(())
+    // Ok(())
 }
 
-fn handle_connection(mut stream: TcpStream) {
+pub fn handle_connection(mut stream: TcpStream) {
     let mut buffer = [0; 1024];
     stream.read(&mut buffer).unwrap();
 
