@@ -43,7 +43,7 @@ impl Server {
         let listener = TcpListener::bind(address).unwrap();
         for stream in listener.incoming() {
             let mut stream = stream.unwrap();
-            self.parce(&mut stream)
+            self.parse(&mut stream)
                 .and_then(|h| {
                     let get = GET;
                     let handle = *match &*h.header.method {
@@ -64,8 +64,8 @@ impl Server {
         self.get_handle.insert(path.into(), func);
     }
 
-    fn parce(&self, stream: &mut TcpStream) -> Result<HttpMessage, String> {
-        println!("parce start");
+    fn parse(&self, stream: &mut TcpStream) -> Result<HttpMessage, String> {
+        println!("parse start");
         let mut st = [0; 1024];
         stream.read(&mut st).unwrap();
         println!("read stream ended");
