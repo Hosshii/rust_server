@@ -9,6 +9,7 @@ fn main() {
     let mut s = Server::new(8);
     let a = index;
     s.GET("/", index);
+    s.GET("/ping", pong);
     s.start(8080);
     loop {}
 }
@@ -27,6 +28,21 @@ fn index(mut stream: TcpStream) {
     stream.write(response.as_bytes()).unwrap();
     stream.flush().unwrap();
     // Ok(())
+}
+
+fn pong(mut stream: TcpStream) {
+    println!("ping received");
+
+    let (status_line, filename) = ("HTTP/1.1 200 OK\r\n\r\n", "pong.html");
+    let mut file = File::open(filename).unwrap();
+
+    let mut contents = String::new();
+    file.read_to_string(&mut contents).unwrap();
+
+    let response = format!("{}{}", status_line, contents);
+
+    stream.write(response.as_bytes()).unwrap();
+    stream.flush().unwrap();
 }
 
 pub fn handle_connection(mut stream: TcpStream) {
