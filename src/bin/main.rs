@@ -1,17 +1,15 @@
 use rust_server::server::Server;
 use std::fs::File;
 use std::io::prelude::*;
-use std::net::{TcpListener, TcpStream};
+use std::net::TcpStream;
 use std::thread;
 use std::time::Duration;
 
 fn main() {
     let mut s = Server::new(8);
-    let a = index;
     s.GET("/", index);
     s.GET("/ping", pong);
     s.start(8080);
-    loop {}
 }
 
 fn index(mut stream: TcpStream) {

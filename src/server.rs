@@ -1,6 +1,5 @@
-use crate::worker::{PoolCreationErr, ThreadPool};
+use crate::worker::ThreadPool;
 use std::collections::HashMap;
-use std::fmt;
 use std::fs::File;
 use std::io::prelude::*;
 use std::net::{TcpListener, TcpStream};
@@ -19,11 +18,11 @@ struct HttpHeader {
 }
 
 struct HttpMessage {
-    all: stream_buffer,
+    _all: StreamBuffer,
     header: HttpHeader,
 }
 
-pub type stream_buffer = [u8; 1024];
+pub type StreamBuffer = [u8; 1024];
 
 impl Server {
     pub fn new(size: usize) -> Server {
@@ -46,9 +45,9 @@ impl Server {
             let mut stream = stream.unwrap();
             self.parce(&mut stream)
                 .and_then(|h| {
-                    let get = GET.to_string();
-                    let handle = *match &h.header.method {
-                        get => self
+                    let get = GET;
+                    let handle = *match &*h.header.method {
+                        g if g == get => self
                             .get_handle
                             .get(&h.header.path)
                             .unwrap_or_else(|| &(not_found as fn(TcpStream))),
@@ -60,7 +59,7 @@ impl Server {
                 .unwrap();
         }
     }
-
+    #[allow(non_snake_case)]
     pub fn GET(&mut self, path: impl Into<String>, func: fn(TcpStream)) {
         self.get_handle.insert(path.into(), func);
     }
@@ -91,16 +90,16 @@ impl Server {
 
         let msg = HttpMessage {
             header: test,
-            all: st,
+            _all: st,
         };
-        let a = req_info[0].to_string();
-        let get = GET.to_string();
+        let a = req_info[0];
+        let get = GET;
         match a {
             // GET => Ok(HttpHeader {
             //     method: GET,
             //     path: req_info[1],
             // }),
-            get => Ok(msg),
+            g if g == get => Ok(msg),
             _ => Err("parsing eerr".to_string()),
         }
     }
