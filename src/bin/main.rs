@@ -14,7 +14,7 @@ fn main() {
 }
 
 fn index(mut stream: TcpStream) {
-    println!("received");
+    println!("index received");
 
     let (status_line, filename) = ("HTTP/1.1 200 OK\r\n\r\n", "hello.html");
     let mut file = File::open(filename).unwrap();
@@ -24,7 +24,6 @@ fn index(mut stream: TcpStream) {
 
     let response = format!("{}{}", status_line, contents);
 
-    println!("here");
     stream.write(response.as_bytes()).unwrap();
     stream.flush().unwrap();
     // Ok(())

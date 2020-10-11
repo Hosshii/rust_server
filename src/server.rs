@@ -12,7 +12,7 @@ pub struct Server {
 
 const GET: &str = "GET";
 
-// #[derive(Clone)]
+#[derive(Debug)]
 struct HttpHeader {
     method: String,
     path: String,
@@ -66,8 +66,10 @@ impl Server {
     }
 
     fn parce(&self, stream: &mut TcpStream) -> Result<HttpMessage, String> {
+        println!("parce start");
         let mut st = [0; 1024];
         stream.read(&mut st).unwrap();
+        println!("read stream ended");
         let mut buf = String::new();
         for i in st.iter() {
             if *i == ('\r' as u8) {
@@ -85,6 +87,8 @@ impl Server {
                 "/".to_string()
             },
         };
+        println!("{:?}", test);
+
         let msg = HttpMessage {
             header: test,
             all: st,
@@ -103,7 +107,7 @@ impl Server {
 }
 
 fn not_found(mut stream: TcpStream) {
-    println!("received");
+    println!("not found");
 
     let (status_line, filename) = ("HTTP/1.1 404 Not Found\r\n\r\n", "404.html");
     let mut file = File::open(filename).unwrap();
