@@ -1,4 +1,5 @@
 use rust_server::message::Message;
+use rust_server::method::Method;
 use std::io::Read;
 use std::net::{TcpListener, TcpStream};
 use std::thread;
@@ -26,6 +27,9 @@ fn parse_header() {
                 m.method, m.path, m.version
             )
         );
+        assert_eq!(m.method, Method::Get);
+        assert_eq!(m.path, "/");
+        assert_eq!(m.version, "HTTP/1.1");
     }
     // unimplemented!();
 }
