@@ -9,10 +9,11 @@ fn main() {
     let mut s = Server::new(8);
     s.GET("/", index);
     s.GET("/ping", pong);
-    s.start(8080);
+    s.GET("/sleep", sleep);
+    s.start(7878);
 }
 
-fn index(mut stream: TcpStream) {
+fn index(mut stream: TcpStream) -> Result<(), String> {
     println!("index received");
 
     let (status_line, filename) = ("HTTP/1.1 200 OK\r\n\r\n", "hello.html");
@@ -25,10 +26,10 @@ fn index(mut stream: TcpStream) {
 
     stream.write(response.as_bytes()).unwrap();
     stream.flush().unwrap();
-    // Ok(())
+    Ok(())
 }
 
-fn pong(mut stream: TcpStream) {
+fn pong(mut stream: TcpStream) -> Result<(), String> {
     println!("ping received");
 
     let (status_line, filename) = ("HTTP/1.1 200 OK\r\n\r\n", "pong.html");
@@ -41,24 +42,16 @@ fn pong(mut stream: TcpStream) {
 
     stream.write(response.as_bytes()).unwrap();
     stream.flush().unwrap();
+    Ok(())
 }
 
-pub fn handle_connection(mut stream: TcpStream) {
-    let mut buffer = [0; 1024];
-    stream.read(&mut buffer).unwrap();
+fn sleep(mut stream: TcpStream) -> Result<(), String> {
+    let time = 5;
+    println!("sleep received");
+    println!("{} second sleeping", time);
+    thread::sleep(Duration::from_secs(time));
 
-    let get = b"GET / HTTP/1.1\r\n";
-    let sleep = b"GET /sleep HTTP/1.1\r\n";
-
-    let (status_line, filename) = if buffer.starts_with(get) {
-        ("HTTP/1.1 200 OK\r\n\r\n", "hello.html")
-    } else if buffer.starts_with(sleep) {
-        thread::sleep(Duration::from_secs(5));
-        ("HTTP/1.1 200 OK\r\n\r\n", "hello.html")
-    } else {
-        ("HTTP/1.1 404 Not Found\r\n\r\n", "404.html")
-    };
-
+    let (status_line, filename) = ("HTTP/1.1 200 OK\r\n\r\n", "hello.html");
     let mut file = File::open(filename).unwrap();
 
     let mut contents = String::new();
@@ -68,4 +61,5 @@ pub fn handle_connection(mut stream: TcpStream) {
 
     stream.write(response.as_bytes()).unwrap();
     stream.flush().unwrap();
+    Ok(())
 }

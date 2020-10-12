@@ -6,7 +6,7 @@ use std::net::{TcpListener, TcpStream};
 
 pub struct Server {
     pool: ThreadPool,
-    get_handle: HashMap<String, fn(TcpStream)>,
+    get_handle: HashMap<String, fn(TcpStream) -> Result<(), String>>,
 }
 
 const GET: &str = "GET";
@@ -50,25 +50,23 @@ impl Server {
                         g if g == get => self
                             .get_handle
                             .get(&h.header.path)
-                            .unwrap_or_else(|| &(not_found as fn(TcpStream))),
-                        _ => &(not_found as fn(TcpStream)),
+                            .unwrap_or_else(|| &(not_found as fn(TcpStream) -> Result<(), String>)),
+                        _ => &(not_found as fn(TcpStream) -> Result<(), String>),
                     };
-                    self.pool.execute(move || handle(stream));
+                    self.pool.execute(move || handle(stream).unwrap());
                     Ok(())
                 })
                 .unwrap();
         }
     }
     #[allow(non_snake_case)]
-    pub fn GET(&mut self, path: impl Into<String>, func: fn(TcpStream)) {
+    pub fn GET(&mut self, path: impl Into<String>, func: fn(TcpStream) -> Result<(), String>) {
         self.get_handle.insert(path.into(), func);
     }
 
     fn parse(&self, stream: &mut TcpStream) -> Result<HttpMessage, String> {
-        println!("parse start");
         let mut st = [0; 1024];
         stream.read(&mut st).unwrap();
-        println!("read stream ended");
         let mut buf = String::new();
         for i in st.iter() {
             if *i == ('\r' as u8) {
@@ -105,7 +103,7 @@ impl Server {
     }
 }
 
-fn not_found(mut stream: TcpStream) {
+fn not_found(mut stream: TcpStream) -> Result<(), String> {
     println!("not found");
 
     let (status_line, filename) = ("HTTP/1.1 404 Not Found\r\n\r\n", "404.html");
@@ -118,5 +116,5 @@ fn not_found(mut stream: TcpStream) {
 
     stream.write(response.as_bytes()).unwrap();
     stream.flush().unwrap();
-    // Ok(())
+    Ok(())
 }
