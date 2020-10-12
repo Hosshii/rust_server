@@ -65,6 +65,8 @@ impl Message {
                         self.path = v[1].to_string();
                         self.version = v[2].to_string();
                     }
+
+                    self.state = MessageState::Header;
                 }
                 MessageState::Header => (),
                 MessageState::Body => (),
