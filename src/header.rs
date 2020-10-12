@@ -1,3 +1,5 @@
+use self::HttpHeader::*;
+
 pub enum HttpHeader {
     UserAgent,
     Accept,
