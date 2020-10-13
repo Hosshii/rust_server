@@ -1,5 +1,7 @@
 use rust_server::message::Message;
 use rust_server::method::Method;
+use std::fs::File;
+use std::io::prelude::*;
 use std::io::Read;
 use std::net::{TcpListener, TcpStream};
 use std::thread;
@@ -20,6 +22,7 @@ fn parse_header() {
         let mut stream = stream.unwrap();
         let mut m = Message::new();
         m.parse(&stream);
+        index(stream);
         println!(
             "{}",
             format!(
@@ -27,6 +30,7 @@ fn parse_header() {
                 m.method, m.path, m.version
             )
         );
+        println!("{:?}", m.headers);
         assert_eq!(m.method, Method::Get);
         assert_eq!(m.path, "/");
         assert_eq!(m.version, "HTTP/1.1");
@@ -39,4 +43,20 @@ fn send_request() {
     let add = format!("http://{}", addr);
     let _ = reqwest::blocking::get(&add).unwrap();
     println!("end");
+}
+
+fn index(mut stream: TcpStream) -> Result<(), String> {
+    println!("index received");
+
+    let (status_line, filename) = ("HTTP/1.1 200 OK\r\n\r\n", "hello.html");
+    let mut file = File::open(filename).unwrap();
+
+    let mut contents = String::new();
+    file.read_to_string(&mut contents).unwrap();
+
+    let response = format!("{}{}", status_line, contents);
+
+    stream.write(response.as_bytes()).unwrap();
+    stream.flush().unwrap();
+    Ok(())
 }

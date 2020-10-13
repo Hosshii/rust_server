@@ -1,4 +1,5 @@
 use crate::error::ParseError;
+use crate::header::HttpHeader;
 use crate::method::Method;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
@@ -26,9 +27,10 @@ pub struct Message {
     pub method: Method,
     pub path: Path,
     pub version: Version,
-    pub headers: Vec<Header>,
+    pub headers: Header,
     pub message: Option<[u8; MESSAGE_MAX_SIZE]>,
     state: MessageState,
+    content_length: u64,
 }
 
 impl Message {
@@ -37,41 +39,76 @@ impl Message {
             method: Method::Other,
             path: "/".to_string(),
             version: HTTP_11.to_string(),
-            headers: Vec::new(),
+            headers: HashMap::new(),
             message: None,
             state: MessageState::FirstLine,
+            content_length: 0,
         }
     }
 
-    pub fn parse(&mut self, msg: &TcpStream) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn parse(&mut self, msg: &TcpStream) -> Result<(), ParseError> {
+        println!("parse start");
         for result in BufReader::new(msg).lines() {
-            let line = result?;
+            let line = result.unwrap();
+            println!("in for loop {}", line);
             match &self.state {
                 MessageState::FirstLine => {
                     let v: Vec<&str> = line.split(" ").collect();
-                    if v.len() < 2 {
-                        return Err(Box::new(ParseError::ReadHeaderError));
-                    }
-
-                    if let Ok(x) = Method::from_str(v[0]) {
-                        self.method = x;
-                    } else {
-                        return Err(Box::new(ParseError::ReadHeaderError));
-                    }
-
-                    if v.len() < 3 {
-                        self.version = v[1].to_string();
-                    } else {
-                        self.path = v[1].to_string();
-                        self.version = v[2].to_string();
-                    }
-
+                    read_first_line(self, v)?;
                     self.state = MessageState::Header;
                 }
-                MessageState::Header => (),
+                MessageState::Header => {
+                    if line == "" {
+                        self.state = MessageState::Body;
+                        // continue;
+                        break;
+                    }
+                    let v: Vec<&str> = line.split(":").collect();
+                    read_header(self, v)?
+                }
+
                 MessageState::Body => (),
             }
         }
         Ok(())
     }
+}
+
+fn read_first_line(msg: &mut Message, v: Vec<&str>) -> Result<(), ParseError> {
+    if v.len() < 2 {
+        return Err(ParseError::ReadHeaderError);
+    }
+
+    if let Ok(x) = Method::from_str(v[0]) {
+        msg.method = x;
+    } else {
+        return Err(ParseError::ReadHeaderError);
+    };
+
+    if v.len() < 3 {
+        msg.version = v[1].to_string();
+    } else {
+        msg.path = v[1].to_string();
+        msg.version = v[2].to_string();
+    }
+    Ok(())
+}
+
+fn read_header(msg: &mut Message, v: Vec<&str>) -> Result<(), ParseError> {
+    if v.len() < 2 {
+        return Err(ParseError::ReadHeaderError);
+    }
+
+    let content_length = HttpHeader::ContentLength.as_str();
+    match v[0] {
+        x if x == content_length => {
+            let content_length: u64 = v[1].parse().unwrap_or_else(|_| 0);
+            msg.content_length = content_length;
+        }
+        _ => {
+            msg.headers.insert(v[0].to_string(), v[1].to_string());
+        }
+    }
+
+    Ok(())
 }
