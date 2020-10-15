@@ -1,6 +1,7 @@
 use self::Method::*;
 use std::fmt;
 use std::str::FromStr;
+use uncased;
 
 /// Representation of Http methods.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
