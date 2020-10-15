@@ -16,21 +16,14 @@ fn parse_header() {
     let listener = TcpListener::bind(ADDR).unwrap();
     thread::spawn(|| {
         thread::sleep(Duration::from_secs(1));
-        send_request();
+        // send_request();
     });
     for stream in listener.incoming().take(1) {
         let stream = stream.unwrap();
         let mut m = Message::new();
         m.parse(&stream).unwrap();
         index(stream).unwrap();
-        println!(
-            "{}",
-            format!(
-                "method: {}, path: {}, version: {}",
-                m.method, m.path, m.version
-            )
-        );
-        println!("{:?}", m.headers);
+        println!("{:?}", m);
         assert_eq!(m.method, Method::Get);
         assert_eq!(m.path, "/");
         assert_eq!(m.version, "HTTP/1.1");
