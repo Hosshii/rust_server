@@ -2,6 +2,7 @@ use crate::error::ParseError;
 use crate::header::{ContentType, HttpHeader};
 use crate::method::Method;
 use std::collections::HashMap;
+use std::io::Read;
 use std::io::{BufRead, BufReader};
 use std::net::TcpStream;
 use std::str::FromStr;
@@ -11,9 +12,6 @@ type Path = String;
 type Version = String;
 type Header = HashMap<String, String>;
 
-const BODY_MAX_SIZE: usize = 1024 * 256;
-const HEADER_MAX_SIZE: usize = 1024 * 80;
-const MESSAGE_MAX_SIZE: usize = BODY_MAX_SIZE + HEADER_MAX_SIZE + 1024;
 const HTTP_11: &str = "HTTP/1.1";
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -23,13 +21,19 @@ enum MessageState {
     Body,
 }
 
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum MessageBody {
+    StringBody(String),
+    BytesBody(Vec<u8>),
+}
+
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Message {
     pub method: Method,
     pub path: Path,
     pub version: Version,
     pub headers: Header,
-    pub message: Option<[u8; MESSAGE_MAX_SIZE]>,
+    pub message: Option<MessageBody>,
     state: MessageState,
     pub content_length: u64,
     pub content_type: ContentType,
@@ -65,10 +69,7 @@ impl Message {
                 MessageState::Header => {
                     if buf == "" {
                         self.state = MessageState::Body;
-                        if self.content_length <= 0 {
-                            break;
-                        }
-                        continue;
+                        break;
                     }
                     let v: Vec<&str> = buf.split(":").collect();
                     read_header(self, v)?
@@ -80,6 +81,7 @@ impl Message {
             }
             buf.clear();
         }
+        read_body(self, reader)?;
 
         Ok(())
     }
@@ -112,7 +114,7 @@ fn read_header(msg: &mut Message, v: Vec<&str>) -> Result<(), ParseError> {
 
     match v[0] {
         x if uncased::eq(x, HttpHeader::ContentLength.as_str()) => {
-            let content_length: u64 = v[1].parse().unwrap_or_else(|_| 0);
+            let content_length: u64 = v[1].trim().parse().unwrap_or_else(|_| 0);
             msg.content_length = content_length;
         }
         x if uncased::eq(x, HttpHeader::ContentType.as_str()) => {
@@ -125,5 +127,25 @@ fn read_header(msg: &mut Message, v: Vec<&str>) -> Result<(), ParseError> {
         }
     }
 
+    Ok(())
+}
+
+fn read_body(
+    msg: &mut Message,
+    reader: std::io::BufReader<&std::net::TcpStream>,
+) -> Result<(), ParseError> {
+    let mut v = Vec::new();
+    let mut chunk = reader.take(msg.content_length);
+    let _ = chunk.read_to_end(&mut v).unwrap();
+    match msg.content_type {
+        ContentType::ApplicationJson | ContentType::TextHtml | ContentType::TextPlain => {
+            msg.message = Some(MessageBody::StringBody(
+                String::from_utf8_lossy(&v).to_string(),
+            ));
+        }
+        ContentType::ImageJpeg | ContentType::ImagePng => {
+            msg.message = Some(MessageBody::BytesBody(v))
+        }
+    }
     Ok(())
 }
