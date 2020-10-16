@@ -15,39 +15,39 @@ type Header = HashMap<String, String>;
 const HTTP_11: &str = "HTTP/1.1";
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-enum MessageState {
+enum RequestState {
     FirstLine,
     Header,
     Body,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub enum MessageBody {
+pub enum RequestBody {
     StringBody(String),
     BytesBody(Vec<u8>),
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct Message {
+pub struct Request {
     pub method: Method,
     pub path: Path,
     pub version: Version,
     pub headers: Header,
-    pub message: Option<MessageBody>,
-    state: MessageState,
+    pub body: Option<RequestBody>,
+    state: RequestState,
     pub content_length: u64,
     pub content_type: ContentType,
 }
 
-impl Message {
-    pub fn new() -> Message {
-        Message {
+impl Request {
+    pub fn new() -> Request {
+        Request {
             method: Method::Other,
             path: "/".to_string(),
             version: HTTP_11.to_string(),
             headers: HashMap::new(),
-            message: None,
-            state: MessageState::FirstLine,
+            body: None,
+            state: RequestState::FirstLine,
             content_length: 0,
             content_type: ContentType::TextPlain,
         }
@@ -61,14 +61,14 @@ impl Message {
             buf.pop();
             buf.pop();
             match &self.state {
-                MessageState::FirstLine => {
+                RequestState::FirstLine => {
                     let v: Vec<&str> = buf.split(" ").collect();
                     read_first_line(self, v)?;
-                    self.state = MessageState::Header;
+                    self.state = RequestState::Header;
                 }
-                MessageState::Header => {
+                RequestState::Header => {
                     if buf == "" {
-                        self.state = MessageState::Body;
+                        self.state = RequestState::Body;
                         break;
                     }
                     let v: Vec<&str> = buf.split(":").collect();
@@ -87,7 +87,7 @@ impl Message {
     }
 }
 
-fn read_first_line(msg: &mut Message, v: Vec<&str>) -> Result<(), ParseError> {
+fn read_first_line(msg: &mut Request, v: Vec<&str>) -> Result<(), ParseError> {
     if v.len() < 2 {
         return Err(ParseError::ReadHeaderError);
     }
@@ -107,7 +107,7 @@ fn read_first_line(msg: &mut Message, v: Vec<&str>) -> Result<(), ParseError> {
     Ok(())
 }
 
-fn read_header(msg: &mut Message, v: Vec<&str>) -> Result<(), ParseError> {
+fn read_header(msg: &mut Request, v: Vec<&str>) -> Result<(), ParseError> {
     if v.len() < 2 {
         return Err(ParseError::ReadHeaderError);
     }
@@ -131,7 +131,7 @@ fn read_header(msg: &mut Message, v: Vec<&str>) -> Result<(), ParseError> {
 }
 
 fn read_body(
-    msg: &mut Message,
+    msg: &mut Request,
     reader: std::io::BufReader<&std::net::TcpStream>,
 ) -> Result<(), ParseError> {
     let mut v = Vec::new();
@@ -139,12 +139,12 @@ fn read_body(
     let _ = chunk.read_to_end(&mut v).unwrap();
     match msg.content_type {
         ContentType::ApplicationJson | ContentType::TextHtml | ContentType::TextPlain => {
-            msg.message = Some(MessageBody::StringBody(
+            msg.body = Some(RequestBody::StringBody(
                 String::from_utf8_lossy(&v).to_string(),
             ));
         }
         ContentType::ImageJpeg | ContentType::ImagePng => {
-            msg.message = Some(MessageBody::BytesBody(v))
+            msg.body = Some(RequestBody::BytesBody(v))
         }
     }
     Ok(())
