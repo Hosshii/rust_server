@@ -1,6 +1,8 @@
 use crate::error::ServerError;
 use crate::header::{ContentType, HttpHeader};
 use crate::method::Method;
+use crate::server::ResponseWriter;
+use crate::status_code::StatusCode;
 use std::collections::HashMap;
 use std::io::Read;
 use std::io::{BufRead, BufReader};
@@ -10,12 +12,12 @@ use uncased;
 
 type Path = String;
 type Version = String;
-type Header = HashMap<String, String>;
+pub type Header = HashMap<String, String>;
 
 const HTTP_11: &str = "HTTP/1.1";
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-enum RequestState {
+pub enum RequestState {
     FirstLine,
     Header,
     Body,
@@ -148,4 +150,58 @@ fn read_body(
         }
     }
     Ok(())
+}
+
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum ResponseBody {
+    StringBody(String),
+    BytesBody(Vec<u8>),
+}
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Response {
+    pub version: Version,
+    pub status_code: StatusCode,
+    pub headers: Header,
+    pub body: Option<ResponseBody>,
+    pub content_length: u64,
+    pub content_type: ContentType,
+}
+
+impl ResponseWriter for Response {
+    fn write(&mut self, data: Vec<u8>) {
+        self.body = Some(ResponseBody::BytesBody(data));
+    }
+    fn write_header(&mut self, code: usize) {
+        self.status_code = StatusCode::from_num(code).unwrap_or_else(|e| StatusCode::Ok)
+    }
+    fn header(&mut self, headers: Header) {
+        self.headers = headers;
+    }
+}
+
+impl Response {
+    fn format(&self) -> String {
+        let status_line = format!(
+            "{} {} {}\r\n",
+            self.version,
+            self.status_code.as_num(),
+            self.status_code.as_str()
+        );
+
+        let headers = String::new();
+        for (key, value) in self.headers {
+            headers += format!("{}: {}\r\n", key, value);
+        }
+
+        let body = String::new();
+
+        if let Some(x) = self.body {
+            match x {
+                ResponseBody::BytesBody(y) => todo!(),
+                ResponseBody::StringBody(y) => body = y,
+            }
+        }
+        format!("{}{}{}", status_line, headers, body)
+    }
 }

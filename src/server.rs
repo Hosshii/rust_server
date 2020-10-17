@@ -1,6 +1,7 @@
 use crate::error::ServerError;
+use crate::message::Header;
+use crate::message::Request;
 use crate::method::Method;
-use crate::request::Request;
 use crate::worker::ThreadPool;
 use std::collections::HashMap;
 use std::fs::File;
@@ -39,7 +40,9 @@ pub struct DefaultServeMux {
 }
 
 impl Handler for DefaultServeMux {
-    fn serve_http(&self, writer: &dyn ResponseWriter, req: &Request) {}
+    fn serve_http(&self, writer: &dyn ResponseWriter, req: &Request) {
+        self.handler(req).serve_http(writer, req);
+    }
 }
 
 impl DefaultServeMux {
@@ -66,13 +69,26 @@ impl DefaultServeMux {
     }
 }
 
-pub struct Writer {}
-impl ResponseWriter for Writer {
-    fn write(&self, data: Vec<u8>) {}
+pub trait ResponseWriter {
+    fn write(&mut self, data: Vec<u8>);
+    fn header(&mut self, headers: Header);
+    fn write_header(&mut self, code: usize);
 }
 
-pub trait ResponseWriter {
-    fn write(&self, data: Vec<u8>);
+pub struct Response<'a> {
+    conn: &'a Conn,
+    req: &'a Request,
+}
+impl<'a> ResponseWriter for Response<'a> {
+    fn write(&mut self, data: Vec<u8>) {}
+    fn header(&mut self, headers: Header) {}
+    fn write_header(&mut self, code: usize) {}
+}
+
+impl<'a> Response<'a> {
+    fn read_request(&self) -> Result<(), ServerError> {
+        self.req.parse(&self.conn.stream)
+    }
 }
 
 pub struct Server {
@@ -133,7 +149,7 @@ impl Conn {
         let serve_handler = ServeHandler {
             server: self.server.clone(),
         };
-        serve_handler.serve_http(&Writer {}, &Request::new())
+        serve_handler.serve_http(&Response {}, &Request::new())
     }
 }
 
@@ -159,14 +175,5 @@ impl Handler for NotFoundHandler {
 impl NotFoundHandler {
     fn new() -> Self {
         NotFoundHandler {}
-    }
-}
-struct NotFoundHandler2;
-impl Handler for NotFoundHandler2 {
-    fn serve_http(&self, writer: &dyn ResponseWriter, req: &Request) {}
-}
-impl NotFoundHandler2 {
-    fn new() -> Self {
-        NotFoundHandler2 {}
     }
 }
