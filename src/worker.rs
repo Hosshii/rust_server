@@ -63,7 +63,7 @@ enum Message {
 
 pub struct ThreadPool {
     workers: Vec<Worker>,
-    sender: mpsc::Sender<Message>,
+    sender: Arc<Mutex<mpsc::Sender<Message>>>,
 }
 
 impl ThreadPool {
@@ -87,7 +87,10 @@ impl ThreadPool {
             workers.push(Worker::new(i as u64, Arc::clone(&receiver)));
         }
 
-        Ok(ThreadPool { workers, sender })
+        Ok(ThreadPool {
+            workers,
+            sender: Arc::new(Mutex::new(sender)),
+        })
     }
 
     pub fn execute<F>(&self, f: F)
@@ -95,7 +98,11 @@ impl ThreadPool {
         F: FnOnce() + Send + 'static,
     {
         let job = Box::new(f);
-        self.sender.send(Message::NewJob(job)).unwrap();
+        self.sender
+            .lock()
+            .unwrap()
+            .send(Message::NewJob(job))
+            .unwrap();
     }
 }
 
@@ -104,7 +111,11 @@ impl Drop for ThreadPool {
         println!("Setting terminate message to all workers.");
 
         for _ in &mut self.workers {
-            self.sender.send(Message::Terminate).unwrap();
+            self.sender
+                .lock()
+                .unwrap()
+                .send(Message::Terminate)
+                .unwrap();
         }
 
         println!("Shutting down all workers.");

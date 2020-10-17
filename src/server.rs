@@ -1,25 +1,68 @@
 use crate::error::ServerError;
+use crate::method::Method;
 use crate::request::Request;
 use crate::worker::ThreadPool;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::prelude::*;
 use std::net::{TcpListener, TcpStream};
-use std::sync::Arc;
+use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 pub trait Handler {
     fn serve_http(&self, writer: &dyn ResponseWriter, req: &Request);
 }
 
-pub struct DefaultHandler;
+struct GetEntry {
+    path: String,
+    handler: Rc<dyn Handler>,
+}
+impl GetEntry {
+    fn new(path: String, handler: Rc<dyn Handler>) -> Self {
+        GetEntry { path, handler }
+    }
+}
 
-impl Handler for DefaultHandler {
+struct PostEntry {
+    path: String,
+    handler: Rc<dyn Handler>,
+}
+impl PostEntry {
+    fn new(path: String, handler: Rc<dyn Handler>) -> Self {
+        PostEntry { path, handler }
+    }
+}
+
+pub struct DefaultServeMux {
+    get: HashMap<String, GetEntry>,
+    post: HashMap<String, PostEntry>,
+}
+
+impl Handler for DefaultServeMux {
     fn serve_http(&self, writer: &dyn ResponseWriter, req: &Request) {}
 }
 
-impl DefaultHandler {
+impl DefaultServeMux {
     fn new() -> Self {
-        DefaultHandler {}
+        DefaultServeMux {
+            get: HashMap::new(),
+            post: HashMap::new(),
+        }
+    }
+
+    // fn handler(&self, r: &Request) -> impl Handler {
+    fn handler(&self, r: &Request) -> Rc<dyn Handler> {
+        match r.method {
+            Method::Get => {
+                if let Some(x) = self.get.get(&r.path) {
+                    x.handler.clone()
+                } else {
+                    Rc::new(NotFoundHandler::new())
+                }
+                // Box::new(NotFoundHandler::new())
+            }
+            _ => Rc::new(NotFoundHandler::new()),
+        }
     }
 }
 
@@ -32,29 +75,27 @@ pub trait ResponseWriter {
     fn write(&self, data: Vec<u8>);
 }
 
-pub struct Server<'a> {
+pub struct Server {
     pool: ThreadPool,
-    get_handle: HashMap<String, fn(TcpStream) -> Result<(), String>>,
     addr: String,
-    handler: Option<&'a dyn Handler>,
+    handler: Option<Arc<(dyn Handler + Send + Sync)>>,
 }
 
 pub type StreamBuffer = [u8; 1024];
 
-impl<'a> Server<'a> {
-    pub fn new(size: usize) -> Server<'a> {
+impl Server {
+    pub fn new(size: usize) -> Self {
         let pool = ThreadPool::new(size).unwrap();
 
         Server {
             pool,
-            get_handle: HashMap::new(),
             handler: None,
             addr: "8080".to_string(),
         }
     }
 
-    pub fn listen_and_serve(&self) -> Result<(), ServerError> {
-        let mut addr: &str = &(self.addr);
+    pub fn listen_and_serve(self) -> Result<(), ServerError> {
+        let mut addr: &str = &self.addr;
         if addr == "" {
             addr = "127.0.0.1:8080";
         }
@@ -62,24 +103,26 @@ impl<'a> Server<'a> {
         self.serve(listener)
     }
 
-    fn serve(&self, listener: TcpListener) -> Result<(), ServerError> {
+    /// ## warning
+    /// after calling this method, self will moved
+    fn serve(self, listener: TcpListener) -> Result<(), ServerError> {
+        let srvarc = Arc::new(self);
         for stream in listener.incoming() {
             let mut stream = stream.unwrap();
-            let srvarc = Arc::new(*self);
-            let mut c = Conn::new(srvarc, stream);
-            self.pool.execute(|| c.serve());
+            let mut c = Conn::new(srvarc.clone(), stream);
+            srvarc.pool.execute(move || c.serve());
         }
         Ok(())
     }
 }
 
-struct Conn<'a> {
-    server: Arc<Server<'a>>,
+struct Conn {
+    server: Arc<Server>,
     stream: Arc<TcpStream>,
 }
 
-impl<'a> Conn<'a> {
-    fn new(server: Arc<Server<'a>>, stream: TcpStream) -> Conn<'a> {
+impl Conn {
+    fn new(server: Arc<Server>, mut stream: TcpStream) -> Conn {
         Conn {
             server: server,
             stream: Arc::new(stream),
@@ -88,24 +131,42 @@ impl<'a> Conn<'a> {
 
     fn serve(&self) {
         let serve_handler = ServeHandler {
-            server: &self.server,
+            server: self.server.clone(),
         };
-        // serve_handler.serve_http(Writer {}, &Request::new())
+        serve_handler.serve_http(&Writer {}, &Request::new())
     }
 }
 
-struct ServeHandler<'a> {
-    server: &'a Server<'a>,
+struct ServeHandler {
+    server: Arc<Server>,
 }
 
-impl<'a> ServeHandler<'a> {
+impl ServeHandler {
     pub fn serve_http(&self, rw: &impl ResponseWriter, req: &Request) {
-        let mut handler: &dyn Handler = &DefaultHandler::new();
-
-        if let Some(x) = self.server.handler {
-            handler = x;
+        let mut handler: Arc<dyn Handler> = Arc::new(DefaultServeMux::new());
+        if let Some(x) = &self.server.handler {
+            handler = x.clone();
         }
 
         handler.serve_http(rw, req);
+    }
+}
+
+struct NotFoundHandler;
+impl Handler for NotFoundHandler {
+    fn serve_http(&self, writer: &dyn ResponseWriter, req: &Request) {}
+}
+impl NotFoundHandler {
+    fn new() -> Self {
+        NotFoundHandler {}
+    }
+}
+struct NotFoundHandler2;
+impl Handler for NotFoundHandler2 {
+    fn serve_http(&self, writer: &dyn ResponseWriter, req: &Request) {}
+}
+impl NotFoundHandler2 {
+    fn new() -> Self {
+        NotFoundHandler2 {}
     }
 }
