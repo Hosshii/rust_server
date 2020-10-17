@@ -6,11 +6,11 @@ use std::thread;
 use std::time::Duration;
 
 fn main() {
-    let mut s = Server::new(8);
-    s.GET("/", index);
-    s.GET("/ping", pong);
-    s.GET("/sleep", sleep);
-    s.start(7878);
+    // let mut s = Server::new(8);
+    // s.GET("/", index);
+    // s.GET("/ping", pong);
+    // s.GET("/sleep", sleep);
+    // s.start(7878);
 }
 
 fn index(mut stream: TcpStream) -> Result<(), String> {

@@ -1,120 +1,111 @@
+use crate::error::ServerError;
+use crate::request::Request;
 use crate::worker::ThreadPool;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::prelude::*;
 use std::net::{TcpListener, TcpStream};
+use std::sync::Arc;
 
-pub struct Server {
+pub trait Handler {
+    fn serve_http(&self, writer: &dyn ResponseWriter, req: &Request);
+}
+
+pub struct DefaultHandler;
+
+impl Handler for DefaultHandler {
+    fn serve_http(&self, writer: &dyn ResponseWriter, req: &Request) {}
+}
+
+impl DefaultHandler {
+    fn new() -> Self {
+        DefaultHandler {}
+    }
+}
+
+pub struct Writer {}
+impl ResponseWriter for Writer {
+    fn write(&self, data: Vec<u8>) {}
+}
+
+pub trait ResponseWriter {
+    fn write(&self, data: Vec<u8>);
+}
+
+pub struct Server<'a> {
     pool: ThreadPool,
     get_handle: HashMap<String, fn(TcpStream) -> Result<(), String>>,
-}
-
-const GET: &str = "GET";
-
-#[derive(Debug)]
-struct HttpHeader {
-    method: String,
-    path: String,
-}
-
-struct HttpMessage {
-    _all: StreamBuffer,
-    header: HttpHeader,
+    addr: String,
+    handler: Option<&'a dyn Handler>,
 }
 
 pub type StreamBuffer = [u8; 1024];
 
-impl Server {
-    pub fn new(size: usize) -> Server {
+impl<'a> Server<'a> {
+    pub fn new(size: usize) -> Server<'a> {
         let pool = ThreadPool::new(size).unwrap();
 
         Server {
             pool,
             get_handle: HashMap::new(),
+            handler: None,
+            addr: "8080".to_string(),
         }
     }
 
-    /// start the server
-    ///
-    /// specify the port number
-    pub fn start(&self, port: u32) {
-        let ip_addr = "127.0.0.1";
-        let address = format!("{}:{}", ip_addr, port);
-        let listener = TcpListener::bind(address).unwrap();
+    pub fn listen_and_serve(&self) -> Result<(), ServerError> {
+        let mut addr: &str = &(self.addr);
+        if addr == "" {
+            addr = "127.0.0.1:8080";
+        }
+        let listener = TcpListener::bind(addr).unwrap();
+        self.serve(listener)
+    }
+
+    fn serve(&self, listener: TcpListener) -> Result<(), ServerError> {
         for stream in listener.incoming() {
             let mut stream = stream.unwrap();
-            self.parse(&mut stream)
-                .and_then(|h| {
-                    let get = GET;
-                    let handle = *match &*h.header.method {
-                        g if g == get => self
-                            .get_handle
-                            .get(&h.header.path)
-                            .unwrap_or_else(|| &(not_found as fn(TcpStream) -> Result<(), String>)),
-                        _ => &(not_found as fn(TcpStream) -> Result<(), String>),
-                    };
-                    self.pool.execute(move || handle(stream).unwrap());
-                    Ok(())
-                })
-                .unwrap();
+            let srvarc = Arc::new(*self);
+            let mut c = Conn::new(srvarc, stream);
+            self.pool.execute(|| c.serve());
         }
-    }
-    #[allow(non_snake_case)]
-    pub fn GET(&mut self, path: impl Into<String>, func: fn(TcpStream) -> Result<(), String>) {
-        self.get_handle.insert(path.into(), func);
-    }
-
-    fn parse(&self, stream: &mut TcpStream) -> Result<HttpMessage, String> {
-        let mut st = [0; 1024];
-        stream.read(&mut st).unwrap();
-        let mut buf = String::new();
-        for i in st.iter() {
-            if *i == ('\r' as u8) {
-                break;
-            }
-            // buf += i;
-            buf.push(*i as char);
-        }
-        let req_info: Vec<&str> = buf.split(" ").collect();
-        let test = HttpHeader {
-            method: GET.to_string(),
-            path: if req_info.len() > 1 {
-                req_info[1].to_string()
-            } else {
-                "/".to_string()
-            },
-        };
-        println!("{:?}", test);
-
-        let msg = HttpMessage {
-            header: test,
-            _all: st,
-        };
-        let a = req_info[0];
-        let get = GET;
-        match a {
-            // GET => Ok(HttpHeader {
-            //     method: GET,
-            //     path: req_info[1],
-            // }),
-            g if g == get => Ok(msg),
-            _ => Err("parsing eerr".to_string()),
-        }
+        Ok(())
     }
 }
 
-fn not_found(mut stream: TcpStream) -> Result<(), String> {
-    println!("not found");
+struct Conn<'a> {
+    server: Arc<Server<'a>>,
+    stream: Arc<TcpStream>,
+}
 
-    let (status_line, filename) = ("HTTP/1.1 404 Not Found\r\n\r\n", "404.html");
-    let mut file = File::open(filename).unwrap();
+impl<'a> Conn<'a> {
+    fn new(server: Arc<Server<'a>>, stream: TcpStream) -> Conn<'a> {
+        Conn {
+            server: server,
+            stream: Arc::new(stream),
+        }
+    }
 
-    let mut contents = String::new();
-    file.read_to_string(&mut contents).unwrap();
+    fn serve(&self) {
+        let serve_handler = ServeHandler {
+            server: &self.server,
+        };
+        // serve_handler.serve_http(Writer {}, &Request::new())
+    }
+}
 
-    let response = format!("{}{}", status_line, contents);
+struct ServeHandler<'a> {
+    server: &'a Server<'a>,
+}
 
-    stream.write(response.as_bytes()).unwrap();
-    stream.flush().unwrap();
-    Ok(())
+impl<'a> ServeHandler<'a> {
+    pub fn serve_http(&self, rw: &impl ResponseWriter, req: &Request) {
+        let mut handler: &dyn Handler = &DefaultHandler::new();
+
+        if let Some(x) = self.server.handler {
+            handler = x;
+        }
+
+        handler.serve_http(rw, req);
+    }
 }

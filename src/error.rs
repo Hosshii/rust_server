@@ -2,29 +2,29 @@ use std::error::Error;
 use std::fmt;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub enum ParseError {
+pub enum ServerError {
     ReadLineError,
     ParseError,
     ReadHeaderError,
 }
 
-impl ParseError {
+impl ServerError {
     fn as_str(self) -> &'static str {
         match self {
-            ParseError::ReadLineError => "ReadLinError",
-            ParseError::ParseError => "ParseError",
-            ParseError::ReadHeaderError => "ReadHeaderError",
+            ServerError::ReadLineError => "ReadLinError",
+            ServerError::ParseError => "ParseError",
+            ServerError::ReadHeaderError => "ReadHeaderError",
         }
     }
 }
 
-impl fmt::Display for ParseError {
+impl fmt::Display for ServerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.as_str())
     }
 }
 
-impl Error for ParseError {
+impl Error for ServerError {
     // fn source(&self) -> Option<&(dyn Error + 'static)> {
     //     Some(&self)
     // }

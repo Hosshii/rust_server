@@ -1,4 +1,4 @@
-use crate::error::ParseError;
+use crate::error::ServerError;
 use crate::header::{ContentType, HttpHeader};
 use crate::method::Method;
 use std::collections::HashMap;
@@ -53,7 +53,7 @@ impl Request {
         }
     }
 
-    pub fn parse(&mut self, msg: &TcpStream) -> Result<(), ParseError> {
+    pub fn parse(&mut self, msg: &TcpStream) -> Result<(), ServerError> {
         println!("parse start");
         let mut buf = String::new();
         let mut reader = BufReader::new(msg);
@@ -87,15 +87,15 @@ impl Request {
     }
 }
 
-fn read_first_line(msg: &mut Request, v: Vec<&str>) -> Result<(), ParseError> {
+fn read_first_line(msg: &mut Request, v: Vec<&str>) -> Result<(), ServerError> {
     if v.len() < 2 {
-        return Err(ParseError::ReadHeaderError);
+        return Err(ServerError::ReadHeaderError);
     }
 
     if let Ok(x) = Method::from_str(v[0]) {
         msg.method = x;
     } else {
-        return Err(ParseError::ReadHeaderError);
+        return Err(ServerError::ReadHeaderError);
     };
 
     if v.len() < 3 {
@@ -107,9 +107,9 @@ fn read_first_line(msg: &mut Request, v: Vec<&str>) -> Result<(), ParseError> {
     Ok(())
 }
 
-fn read_header(msg: &mut Request, v: Vec<&str>) -> Result<(), ParseError> {
+fn read_header(msg: &mut Request, v: Vec<&str>) -> Result<(), ServerError> {
     if v.len() < 2 {
-        return Err(ParseError::ReadHeaderError);
+        return Err(ServerError::ReadHeaderError);
     }
 
     match v[0] {
@@ -133,7 +133,7 @@ fn read_header(msg: &mut Request, v: Vec<&str>) -> Result<(), ParseError> {
 fn read_body(
     msg: &mut Request,
     reader: std::io::BufReader<&std::net::TcpStream>,
-) -> Result<(), ParseError> {
+) -> Result<(), ServerError> {
     let mut v = Vec::new();
     let mut chunk = reader.take(msg.content_length);
     let _ = chunk.read_to_end(&mut v).unwrap();
