@@ -1,4 +1,4 @@
-use rust_server::server::Server;
+use rust_server::server;
 use std::fs::File;
 use std::io::prelude::*;
 use std::net::TcpStream;
@@ -11,6 +11,7 @@ fn main() {
     // s.GET("/ping", pong);
     // s.GET("/sleep", sleep);
     // s.start(7878);
+    server::listen_and_serve(8, "127.0.0.1:7878".to_string(), None);
 }
 
 fn index(mut stream: TcpStream) -> Result<(), String> {

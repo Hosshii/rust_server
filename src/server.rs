@@ -1,6 +1,8 @@
 use crate::error::ServerError;
+use crate::message::Conn;
 use crate::message::Header;
-use crate::message::Request;
+use crate::message::ResponseWriter;
+use crate::message::{Message, Request, Response};
 use crate::method::Method;
 use crate::worker::ThreadPool;
 use std::collections::HashMap;
@@ -10,8 +12,17 @@ use std::net::{TcpListener, TcpStream};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+pub fn listen_and_serve(
+    size: usize,
+    addr: String,
+    handler: Option<Arc<dyn Handler + Send + Sync>>,
+) -> Result<(), ServerError> {
+    let s = Server::new(size, addr, handler);
+    s.listen_and_serve()
+}
+
 pub trait Handler {
-    fn serve_http(&self, writer: &dyn ResponseWriter, req: &Request);
+    fn serve_http(&self, writer: &mut dyn ResponseWriter, req: &Request);
 }
 
 struct GetEntry {
@@ -40,7 +51,7 @@ pub struct DefaultServeMux {
 }
 
 impl Handler for DefaultServeMux {
-    fn serve_http(&self, writer: &dyn ResponseWriter, req: &Request) {
+    fn serve_http(&self, writer: &mut dyn ResponseWriter, req: &Request) {
         self.handler(req).serve_http(writer, req);
     }
 }
@@ -69,28 +80,6 @@ impl DefaultServeMux {
     }
 }
 
-pub trait ResponseWriter {
-    fn write(&mut self, data: Vec<u8>);
-    fn header(&mut self, headers: Header);
-    fn write_header(&mut self, code: usize);
-}
-
-pub struct Response<'a> {
-    conn: &'a Conn,
-    req: &'a Request,
-}
-impl<'a> ResponseWriter for Response<'a> {
-    fn write(&mut self, data: Vec<u8>) {}
-    fn header(&mut self, headers: Header) {}
-    fn write_header(&mut self, code: usize) {}
-}
-
-impl<'a> Response<'a> {
-    fn read_request(&self) -> Result<(), ServerError> {
-        self.req.parse(&self.conn.stream)
-    }
-}
-
 pub struct Server {
     pool: ThreadPool,
     addr: String,
@@ -100,18 +89,23 @@ pub struct Server {
 pub type StreamBuffer = [u8; 1024];
 
 impl Server {
-    pub fn new(size: usize) -> Self {
+    pub(crate) fn new(
+        size: usize,
+        addr: String,
+        handler: Option<Arc<dyn Handler + Send + Sync>>,
+    ) -> Self {
         let pool = ThreadPool::new(size).unwrap();
 
         Server {
             pool,
-            handler: None,
-            addr: "8080".to_string(),
+            handler,
+            addr,
         }
     }
 
-    pub fn listen_and_serve(self) -> Result<(), ServerError> {
+    pub(crate) fn listen_and_serve(self) -> Result<(), ServerError> {
         let mut addr: &str = &self.addr;
+
         if addr == "" {
             addr = "127.0.0.1:8080";
         }
@@ -132,33 +126,16 @@ impl Server {
     }
 }
 
-struct Conn {
-    server: Arc<Server>,
-    stream: Arc<TcpStream>,
-}
-
-impl Conn {
-    fn new(server: Arc<Server>, mut stream: TcpStream) -> Conn {
-        Conn {
-            server: server,
-            stream: Arc::new(stream),
-        }
-    }
-
-    fn serve(&self) {
-        let serve_handler = ServeHandler {
-            server: self.server.clone(),
-        };
-        serve_handler.serve_http(&Response {}, &Request::new())
-    }
-}
-
-struct ServeHandler {
+pub(crate) struct ServeHandler {
     server: Arc<Server>,
 }
 
 impl ServeHandler {
-    pub fn serve_http(&self, rw: &impl ResponseWriter, req: &Request) {
+    pub fn new(server: Arc<Server>) -> Self {
+        ServeHandler { server }
+    }
+
+    pub fn serve_http(&self, rw: &mut dyn ResponseWriter, req: &Request) {
         let mut handler: Arc<dyn Handler> = Arc::new(DefaultServeMux::new());
         if let Some(x) = &self.server.handler {
             handler = x.clone();
@@ -170,7 +147,19 @@ impl ServeHandler {
 
 struct NotFoundHandler;
 impl Handler for NotFoundHandler {
-    fn serve_http(&self, writer: &dyn ResponseWriter, req: &Request) {}
+    fn serve_http(&self, writer: &mut dyn ResponseWriter, req: &Request) {
+        let mut headers: Header = HashMap::new();
+        headers.insert("x-my-headers".to_string(), "hello world".to_string());
+        writer.header(headers);
+
+        let mut file = File::open("404.html").unwrap();
+        let mut not_found_html = String::new();
+        file.read_to_string(&mut not_found_html).unwrap();
+
+        writer.write(not_found_html.as_bytes().to_vec());
+        writer.write_header(404);
+        writer.send()
+    }
 }
 impl NotFoundHandler {
     fn new() -> Self {

@@ -1,13 +1,15 @@
 use crate::error::ServerError;
 use crate::header::{ContentType, HttpHeader};
 use crate::method::Method;
-use crate::server::ResponseWriter;
+use crate::server::{ServeHandler, Server};
 use crate::status_code::StatusCode;
 use std::collections::HashMap;
+use std::io::prelude::*;
 use std::io::Read;
 use std::io::{BufRead, BufReader};
 use std::net::TcpStream;
 use std::str::FromStr;
+use std::sync::Arc;
 use uncased;
 
 type Path = String;
@@ -15,6 +17,68 @@ type Version = String;
 pub type Header = HashMap<String, String>;
 
 const HTTP_11: &str = "HTTP/1.1";
+
+pub struct Message {
+    pub req: Request,
+    pub res: Response,
+    conn: Conn,
+}
+
+pub trait ResponseWriter {
+    fn write(&mut self, data: Vec<u8>);
+    fn header(&mut self, headers: Header);
+    fn write_header(&mut self, code: usize);
+    fn send(&mut self);
+}
+
+impl ResponseWriter for Message {
+    fn write(&mut self, data: Vec<u8>) {
+        self.res.body = Some(ResponseBody::BytesBody(data));
+    }
+    fn write_header(&mut self, code: usize) {
+        self.res.status_code = StatusCode::from_num(code).unwrap_or_else(|e| StatusCode::Ok);
+    }
+    fn header(&mut self, headers: Header) {
+        self.res.headers = headers;
+    }
+    fn send(&mut self) {
+        self.conn
+            .stream
+            .write(self.res.format().as_bytes())
+            .unwrap();
+        self.conn.stream.flush();
+    }
+}
+
+impl Message {
+    pub(crate) fn new(conn: Conn) -> Self {
+        Message {
+            req: Request::new(),
+            res: Response::new(),
+            conn,
+        }
+    }
+}
+
+pub(crate) struct Conn {
+    server: Arc<Server>,
+    stream: TcpStream,
+}
+
+impl Conn {
+    pub fn new(server: Arc<Server>, mut stream: TcpStream) -> Conn {
+        Conn {
+            server: server,
+            stream: stream,
+        }
+    }
+
+    pub fn serve(self) {
+        let serve_handler = ServeHandler::new(self.server.clone());
+        let msg: &mut dyn ResponseWriter = &mut Message::new(self);
+        serve_handler.serve_http(msg, &Request::new())
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum RequestState {
@@ -168,19 +232,18 @@ pub struct Response {
     pub content_type: ContentType,
 }
 
-impl ResponseWriter for Response {
-    fn write(&mut self, data: Vec<u8>) {
-        self.body = Some(ResponseBody::BytesBody(data));
-    }
-    fn write_header(&mut self, code: usize) {
-        self.status_code = StatusCode::from_num(code).unwrap_or_else(|e| StatusCode::Ok)
-    }
-    fn header(&mut self, headers: Header) {
-        self.headers = headers;
-    }
-}
-
 impl Response {
+    fn new() -> Self {
+        Response {
+            version: HTTP_11.to_string(),
+            status_code: StatusCode::Ok,
+            headers: HashMap::new(),
+            body: None,
+            content_length: 0,
+            content_type: ContentType::TextPlain,
+        }
+    }
+
     fn format(&self) -> String {
         let status_line = format!(
             "{} {} {}\r\n",
@@ -189,14 +252,15 @@ impl Response {
             self.status_code.as_str()
         );
 
-        let headers = String::new();
-        for (key, value) in self.headers {
-            headers += format!("{}: {}\r\n", key, value);
+        let mut headers = String::new();
+        for (key, value) in &self.headers {
+            let s = format!("{}: {}\r\n", key, value);
+            headers = headers + &s;
         }
 
-        let body = String::new();
+        let mut body = "";
 
-        if let Some(x) = self.body {
+        if let Some(x) = &self.body {
             match x {
                 ResponseBody::BytesBody(y) => todo!(),
                 ResponseBody::StringBody(y) => body = y,
