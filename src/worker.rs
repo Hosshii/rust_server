@@ -1,3 +1,4 @@
+use crate::error::ServerError;
 use std::net::TcpStream;
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;

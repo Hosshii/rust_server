@@ -25,15 +25,15 @@ pub struct Message {
 }
 
 pub trait ResponseWriter {
-    fn write(&mut self, data: Vec<u8>);
+    fn write(&mut self, data: ResponseBody);
     fn header(&mut self, headers: Header);
     fn write_header(&mut self, code: usize);
     fn send(&mut self);
 }
 
 impl ResponseWriter for Message {
-    fn write(&mut self, data: Vec<u8>) {
-        self.res.body = Some(ResponseBody::BytesBody(data));
+    fn write(&mut self, data: ResponseBody) {
+        self.res.body = Some(data);
     }
     fn write_header(&mut self, code: usize) {
         self.res.status_code = StatusCode::from_num(code).unwrap_or_else(|e| StatusCode::Ok);
@@ -73,10 +73,12 @@ impl Conn {
         }
     }
 
-    pub fn serve(self) {
+    pub fn serve(self) -> Result<(), ServerError> {
         let serve_handler = ServeHandler::new(self.server.clone());
-        let msg: &mut dyn ResponseWriter = &mut Message::new(self);
-        serve_handler.serve_http(msg, &Request::new())
+        let msg = &mut Message::new(self);
+        msg.req.parse(&msg.conn.stream)?;
+        let req = msg.req.clone();
+        serve_handler.serve_http(msg, &req)
     }
 }
 
@@ -259,7 +261,6 @@ impl Response {
         }
 
         let mut body = "";
-
         if let Some(x) = &self.body {
             match x {
                 ResponseBody::BytesBody(y) => todo!(),

@@ -2,7 +2,7 @@ use crate::error::ServerError;
 use crate::message::Conn;
 use crate::message::Header;
 use crate::message::ResponseWriter;
-use crate::message::{Message, Request, Response};
+use crate::message::{Message, Request, Response, ResponseBody};
 use crate::method::Method;
 use crate::worker::ThreadPool;
 use std::collections::HashMap;
@@ -22,7 +22,8 @@ pub fn listen_and_serve(
 }
 
 pub trait Handler {
-    fn serve_http(&self, writer: &mut dyn ResponseWriter, req: &Request);
+    fn serve_http(&self, writer: &mut dyn ResponseWriter, req: &Request)
+        -> Result<(), ServerError>;
 }
 
 struct GetEntry {
@@ -51,8 +52,12 @@ pub struct DefaultServeMux {
 }
 
 impl Handler for DefaultServeMux {
-    fn serve_http(&self, writer: &mut dyn ResponseWriter, req: &Request) {
-        self.handler(req).serve_http(writer, req);
+    fn serve_http(
+        &self,
+        writer: &mut dyn ResponseWriter,
+        req: &Request,
+    ) -> Result<(), ServerError> {
+        self.handler(req).serve_http(writer, req)
     }
 }
 
@@ -120,7 +125,9 @@ impl Server {
         for stream in listener.incoming() {
             let mut stream = stream.unwrap();
             let mut c = Conn::new(srvarc.clone(), stream);
-            srvarc.pool.execute(move || c.serve());
+            srvarc.pool.execute(move || {
+                c.serve();
+            });
         }
         Ok(())
     }
@@ -135,19 +142,28 @@ impl ServeHandler {
         ServeHandler { server }
     }
 
-    pub fn serve_http(&self, rw: &mut dyn ResponseWriter, req: &Request) {
+    pub fn serve_http(
+        &self,
+        rw: &mut dyn ResponseWriter,
+        req: &Request,
+    ) -> Result<(), ServerError> {
         let mut handler: Arc<dyn Handler> = Arc::new(DefaultServeMux::new());
         if let Some(x) = &self.server.handler {
             handler = x.clone();
         }
 
-        handler.serve_http(rw, req);
+        handler.serve_http(rw, req)
     }
 }
 
 struct NotFoundHandler;
 impl Handler for NotFoundHandler {
-    fn serve_http(&self, writer: &mut dyn ResponseWriter, req: &Request) {
+    fn serve_http(
+        &self,
+        writer: &mut dyn ResponseWriter,
+        req: &Request,
+    ) -> Result<(), ServerError> {
+        println!("not found");
         let mut headers: Header = HashMap::new();
         headers.insert("x-my-headers".to_string(), "hello world".to_string());
         writer.header(headers);
@@ -156,9 +172,10 @@ impl Handler for NotFoundHandler {
         let mut not_found_html = String::new();
         file.read_to_string(&mut not_found_html).unwrap();
 
-        writer.write(not_found_html.as_bytes().to_vec());
+        writer.write(ResponseBody::StringBody(not_found_html));
         writer.write_header(404);
-        writer.send()
+        writer.send();
+        Ok(())
     }
 }
 impl NotFoundHandler {
