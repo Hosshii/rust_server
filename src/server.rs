@@ -2,28 +2,17 @@ use crate::error::ServerError;
 use crate::message::Conn;
 use crate::message::Header;
 use crate::message::ResponseWriter;
-use crate::message::{Message, Request, Response, ResponseBody};
+use crate::message::{Request, ResponseBody};
 use crate::method::Method;
 use crate::worker::ThreadPool;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::prelude::*;
-use std::net::{TcpListener, TcpStream};
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::net::TcpListener;
 
-const not_found_handler: NotFoundHandler = NotFoundHandler::new();
+use std::sync::Arc;
 
-// pub fn listen_and_serve(
-//     size: usize,
-//     addr: String,
-//     handler: Option<Arc<dyn Handler + Send + Sync>>,
-// ) -> Result<(), ServerError> {
-//     let s = Server::new(size, addr, handler);
-//     s.listen_and_serve()
-// }
-
-pub fn handle(method: Method, pattern: String, handler: Rc<dyn Handler>) {}
+const NOT_FOUND_HANDLER: NotFoundHandler = NotFoundHandler::new();
 
 pub trait HandlerServeMux: Handler + ServeMux {}
 
@@ -103,11 +92,11 @@ impl DefaultServeMux {
                 if let Some(x) = self.get.get(&r.path) {
                     x.handler.clone()
                 } else {
-                    Arc::new(NotFoundHandler::new())
+                    Arc::new(NOT_FOUND_HANDLER)
                 }
                 // Box::new(NotFoundHandler::new())
             }
-            _ => Arc::new(NotFoundHandler::new()),
+            _ => Arc::new(NOT_FOUND_HANDLER),
         }
     }
 }
@@ -145,8 +134,8 @@ impl Server {
     fn serve(self, listener: TcpListener) -> Result<(), ServerError> {
         let srvarc = Arc::new(self);
         for stream in listener.incoming() {
-            let mut stream = stream.unwrap();
-            let mut c = Conn::new(srvarc.clone(), stream);
+            let stream = stream.unwrap();
+            let c = Conn::new(srvarc.clone(), stream);
             srvarc.pool.execute(move || {
                 c.serve();
             });
@@ -178,7 +167,7 @@ impl Handler for NotFoundHandler {
     fn serve_http(
         &self,
         writer: &mut dyn ResponseWriter,
-        req: &Request,
+        _req: &Request,
     ) -> Result<(), ServerError> {
         println!("not found");
         let mut headers: Header = HashMap::new();

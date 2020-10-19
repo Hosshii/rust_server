@@ -36,7 +36,7 @@ impl ResponseWriter for Message {
         self.res.body = Some(data);
     }
     fn write_header(&mut self, code: usize) {
-        self.res.status_code = StatusCode::from_num(code).unwrap_or_else(|e| StatusCode::Ok);
+        self.res.status_code = StatusCode::from_num(code).unwrap_or_else(|_| StatusCode::Ok);
     }
     fn header(&mut self, headers: Header) {
         self.res.headers = headers;
@@ -66,7 +66,7 @@ pub(crate) struct Conn {
 }
 
 impl Conn {
-    pub fn new(server: Arc<Server>, mut stream: TcpStream) -> Conn {
+    pub fn new(server: Arc<Server>, stream: TcpStream) -> Conn {
         Conn {
             server: server,
             stream: stream,
@@ -76,7 +76,7 @@ impl Conn {
     pub fn serve(self) -> Result<(), ServerError> {
         let serve_handler = ServeHandler::new(self.server.clone());
         let msg = &mut Message::new(self);
-        msg.req.parse(&msg.conn.stream)?;
+        msg.req.parse(&mut msg.conn.stream)?;
         let req = msg.req.clone();
         serve_handler.serve_http(msg, &req)
     }
@@ -121,7 +121,7 @@ impl Request {
         }
     }
 
-    pub fn parse(&mut self, msg: &TcpStream) -> Result<(), ServerError> {
+    pub fn parse(&mut self, msg: &mut TcpStream) -> Result<(), ServerError> {
         println!("parse start");
         let mut buf = String::new();
         let mut reader = BufReader::new(msg);
@@ -198,10 +198,7 @@ fn read_header(msg: &mut Request, v: Vec<&str>) -> Result<(), ServerError> {
     Ok(())
 }
 
-fn read_body(
-    msg: &mut Request,
-    reader: std::io::BufReader<&std::net::TcpStream>,
-) -> Result<(), ServerError> {
+fn read_body(msg: &mut Request, reader: BufReader<&mut TcpStream>) -> Result<(), ServerError> {
     let mut v = Vec::new();
     let mut chunk = reader.take(msg.content_length);
     let _ = chunk.read_to_end(&mut v).unwrap();
@@ -263,7 +260,7 @@ impl Response {
         let mut body = "";
         if let Some(x) = &self.body {
             match x {
-                ResponseBody::BytesBody(y) => todo!(),
+                ResponseBody::BytesBody(_y) => todo!(),
                 ResponseBody::StringBody(y) => body = y,
             }
         }

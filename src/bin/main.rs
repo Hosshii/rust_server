@@ -23,7 +23,7 @@ impl Handler for Index {
     fn serve_http(
         &self,
         writer: &mut dyn ResponseWriter,
-        req: &Request,
+        _req: &Request,
     ) -> Result<(), ServerError> {
         println!("not found");
         let mut headers: Header = HashMap::new();
@@ -51,7 +51,7 @@ impl Handler for Sleep {
     fn serve_http(
         &self,
         writer: &mut dyn ResponseWriter,
-        req: &Request,
+        _req: &Request,
     ) -> Result<(), ServerError> {
         let time = 5;
         println!("sleep received");

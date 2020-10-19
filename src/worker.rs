@@ -1,5 +1,3 @@
-use crate::error::ServerError;
-use std::net::TcpStream;
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 
@@ -16,7 +14,6 @@ impl<F: FnOnce()> FnBox for F {
 struct Worker {
     id: u64,
     thread: Option<thread::JoinHandle<()>>,
-    stream: Option<TcpStream>,
 }
 
 impl Worker {
@@ -47,7 +44,6 @@ impl Worker {
         Worker {
             id,
             thread: Some(thread),
-            stream: None,
         }
     }
 }
