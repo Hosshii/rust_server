@@ -2,24 +2,19 @@ use rust_server::error::ServerError;
 // use rust_server::header::Header;
 use rust_server::message::{Header, Request, ResponseBody, ResponseWriter};
 use rust_server::method::Method;
-use rust_server::server::{Handler, Server};
+use rust_server::server::{DefaultServeMux, Handler, ServeMux, Server};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::prelude::*;
-use std::net::TcpStream;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
 fn main() -> Result<(), ServerError> {
-    // let mut s = Server::new(8);
-    // s.GET("/", index);
-    // s.GET("/ping", pong);
-    // s.GET("/sleep", sleep);
-    // s.start(7878);
-    let s = Server::new(8, "127.0.0.1:7878".to_string(), None);
-    s.handle(Method::Get, "/hello".to_string(), Arc::new(Index::new()));
-    s.handle(Method::Get, "/sleep".to_string(), Arc::new(Sleep::new()));
+    let mut m = DefaultServeMux::new();
+    m.handle(Method::Get, "/hello".to_string(), Arc::new(Index::new()));
+    m.handle(Method::Get, "/sleep".to_string(), Arc::new(Sleep::new()));
+    let s = Server::new(8, "127.0.0.1:7878".to_string(), Arc::new(m));
     s.listen_and_serve()
 }
 

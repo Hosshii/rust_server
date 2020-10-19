@@ -89,7 +89,7 @@ impl ServeMux for DefaultServeMux {
 }
 
 impl DefaultServeMux {
-    fn new() -> Self {
+    pub fn new() -> Self {
         DefaultServeMux {
             get: HashMap::new(),
             post: HashMap::new(),
@@ -115,38 +115,19 @@ impl DefaultServeMux {
 pub struct Server {
     pool: ThreadPool,
     addr: String,
-    handler: Arc<Mutex<(dyn HandlerServeMux + Send + Sync)>>,
+    handler: Arc<(dyn HandlerServeMux + Send + Sync)>,
 }
 
 pub type StreamBuffer = [u8; 1024];
 
 impl Server {
-    pub fn new(
-        size: usize,
-        addr: String,
-        handler: Option<Arc<Mutex<dyn HandlerServeMux + Send + Sync>>>,
-    ) -> Self {
+    pub fn new(size: usize, addr: String, handler: Arc<dyn HandlerServeMux + Send + Sync>) -> Self {
         let pool = ThreadPool::new(size).unwrap();
-
-        let hn: Arc<Mutex<dyn HandlerServeMux + Send + Sync>>;
-        let a = DefaultServeMux::new();
-        match handler {
-            Some(x) => hn = x,
-            None => hn = Arc::new(Mutex::new(DefaultServeMux::new())),
-        }
-
         Server {
             pool,
-            handler: hn,
+            handler,
             addr,
         }
-    }
-
-    pub fn handle(&self, method: Method, pattern: String, handler: Arc<dyn Handler + Send + Sync>) {
-        self.handler
-            .lock()
-            .unwrap()
-            .handle(method, pattern, handler)
     }
 
     pub fn listen_and_serve(self) -> Result<(), ServerError> {
@@ -188,7 +169,7 @@ impl ServeHandler {
         rw: &mut dyn ResponseWriter,
         req: &Request,
     ) -> Result<(), ServerError> {
-        self.server.handler.lock().unwrap().serve_http(rw, req)
+        self.server.handler.serve_http(rw, req)
     }
 }
 
