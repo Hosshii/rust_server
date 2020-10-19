@@ -42,10 +42,7 @@ impl ResponseWriter for Message {
         self.res.headers = headers;
     }
     fn send(&mut self) {
-        self.conn
-            .stream
-            .write(self.res.format().as_bytes())
-            .unwrap();
+        self.conn.stream.write(&self.res.format()).unwrap();
         self.conn.stream.flush();
     }
 }
@@ -217,7 +214,7 @@ fn read_body(msg: &mut Request, reader: BufReader<&mut TcpStream>) -> Result<(),
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum ResponseBody {
-    StringBody(String),
+    // StringBody(String),
     BytesBody(Vec<u8>),
 }
 
@@ -243,7 +240,7 @@ impl Response {
         }
     }
 
-    fn format(&self) -> String {
+    fn format(&self) -> Vec<u8> {
         let status_line = format!(
             "{} {} {}\r\n",
             self.version,
@@ -257,13 +254,23 @@ impl Response {
             headers = headers + &s;
         }
 
-        let mut body = "";
+        let mut body = Vec::new();
         if let Some(x) = &self.body {
             match x {
-                ResponseBody::BytesBody(_y) => todo!(),
-                ResponseBody::StringBody(y) => body = y,
+                ResponseBody::BytesBody(y) => {
+                    body = y.clone();
+                    let s = format!(
+                        "{}: {}\r\n\r\n",
+                        HttpHeader::ContentLength.as_str(),
+                        y.len()
+                    );
+                    headers = headers + &s;
+                } // ResponseBody::StringBody(y) => body = y,
             }
         }
-        format!("{}{}{}", status_line, headers, body)
+        let s = format!("{}{}", status_line, headers);
+        let mut ss = s.as_bytes().to_vec();
+        ss.append(&mut body);
+        ss
     }
 }

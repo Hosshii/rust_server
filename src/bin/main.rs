@@ -1,5 +1,6 @@
 use rust_server::error::ServerError;
 // use rust_server::header::Header;
+use rust_server::header::{ContentType, HttpHeader};
 use rust_server::message::{Header, Request, ResponseBody, ResponseWriter};
 use rust_server::method::Method;
 use rust_server::server::{DefaultServeMux, Handler, ServeMux, Server};
@@ -25,17 +26,22 @@ impl Handler for Index {
         writer: &mut dyn ResponseWriter,
         _req: &Request,
     ) -> Result<(), ServerError> {
-        println!("not found");
+        // println!("not found");
         let mut headers: Header = HashMap::new();
         headers.insert("x-my-headers".to_string(), "hello world".to_string());
+        headers.insert(
+            HttpHeader::ContentType.as_str().to_string(),
+            ContentType::TextPlain.as_str().to_string(),
+        );
         writer.header(headers);
 
-        let mut file = File::open("hello.html").unwrap();
-        let mut not_found_html = String::new();
-        file.read_to_string(&mut not_found_html).unwrap();
+        // let mut file = File::open("hello.html").unwrap();
+        // let mut not_found_html = String::new();
+        // file.read_to_string(&mut not_found_html).unwrap();
 
-        writer.write(ResponseBody::StringBody(not_found_html));
-        writer.write_header(404);
+        // writer.write(ResponseBody::StringBody(not_found_html));
+        writer.write(ResponseBody::BytesBody("hello".as_bytes().to_vec()));
+        writer.write_header(200);
         writer.send();
         Ok(())
     }
@@ -61,8 +67,8 @@ impl Handler for Sleep {
         let mut not_found_html = String::new();
         file.read_to_string(&mut not_found_html).unwrap();
 
-        writer.write(ResponseBody::StringBody(not_found_html));
-        writer.write_header(404);
+        writer.write(ResponseBody::BytesBody(not_found_html.as_bytes().to_vec()));
+        writer.write_header(200);
         writer.send();
         Ok(())
     }

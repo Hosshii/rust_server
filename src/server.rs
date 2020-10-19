@@ -178,7 +178,7 @@ impl Handler for NotFoundHandler {
         let mut not_found_html = String::new();
         file.read_to_string(&mut not_found_html).unwrap();
 
-        writer.write(ResponseBody::StringBody(not_found_html));
+        writer.write(ResponseBody::BytesBody(not_found_html.as_bytes().to_vec()));
         writer.write_header(404);
         writer.send();
         Ok(())
