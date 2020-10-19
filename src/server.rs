@@ -12,36 +12,46 @@ use std::net::{TcpListener, TcpStream};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-pub fn listen_and_serve(
-    size: usize,
-    addr: String,
-    handler: Option<Arc<dyn Handler + Send + Sync>>,
-) -> Result<(), ServerError> {
-    let s = Server::new(size, addr, handler);
-    s.listen_and_serve()
-}
+const not_found_handler: NotFoundHandler = NotFoundHandler::new();
+
+// pub fn listen_and_serve(
+//     size: usize,
+//     addr: String,
+//     handler: Option<Arc<dyn Handler + Send + Sync>>,
+// ) -> Result<(), ServerError> {
+//     let s = Server::new(size, addr, handler);
+//     s.listen_and_serve()
+// }
+
+pub fn handle(method: Method, pattern: String, handler: Rc<dyn Handler>) {}
+
+pub trait HandlerServeMux: Handler + ServeMux {}
 
 pub trait Handler {
     fn serve_http(&self, writer: &mut dyn ResponseWriter, req: &Request)
         -> Result<(), ServerError>;
 }
 
+pub trait ServeMux {
+    fn handle(&mut self, method: Method, pattern: String, handler: Arc<dyn Handler + Send + Sync>);
+}
+
 struct GetEntry {
     path: String,
-    handler: Rc<dyn Handler>,
+    handler: Arc<dyn Handler + Send + Sync>,
 }
 impl GetEntry {
-    fn new(path: String, handler: Rc<dyn Handler>) -> Self {
+    fn new(path: String, handler: Arc<dyn Handler + Send + Sync>) -> Self {
         GetEntry { path, handler }
     }
 }
 
 struct PostEntry {
     path: String,
-    handler: Rc<dyn Handler>,
+    handler: Arc<dyn Handler + Send + Sync>,
 }
 impl PostEntry {
-    fn new(path: String, handler: Rc<dyn Handler>) -> Self {
+    fn new(path: String, handler: Arc<dyn Handler + Send + Sync>) -> Self {
         PostEntry { path, handler }
     }
 }
@@ -51,6 +61,8 @@ pub struct DefaultServeMux {
     post: HashMap<String, PostEntry>,
 }
 
+impl HandlerServeMux for DefaultServeMux {}
+
 impl Handler for DefaultServeMux {
     fn serve_http(
         &self,
@@ -58,6 +70,21 @@ impl Handler for DefaultServeMux {
         req: &Request,
     ) -> Result<(), ServerError> {
         self.handler(req).serve_http(writer, req)
+    }
+}
+impl ServeMux for DefaultServeMux {
+    fn handle(&mut self, method: Method, pattern: String, handler: Arc<dyn Handler + Send + Sync>) {
+        match method {
+            Method::Get => {
+                let e = GetEntry::new(pattern, handler);
+                self.get.insert(e.path.clone(), e);
+            }
+            Method::Post => {
+                let e = PostEntry::new(pattern, handler);
+                self.post.insert(e.path.clone(), e);
+            }
+            _ => {}
+        }
     }
 }
 
@@ -70,17 +97,17 @@ impl DefaultServeMux {
     }
 
     // fn handler(&self, r: &Request) -> impl Handler {
-    fn handler(&self, r: &Request) -> Rc<dyn Handler> {
+    fn handler(&self, r: &Request) -> Arc<dyn Handler> {
         match r.method {
             Method::Get => {
                 if let Some(x) = self.get.get(&r.path) {
                     x.handler.clone()
                 } else {
-                    Rc::new(NotFoundHandler::new())
+                    Arc::new(NotFoundHandler::new())
                 }
                 // Box::new(NotFoundHandler::new())
             }
-            _ => Rc::new(NotFoundHandler::new()),
+            _ => Arc::new(NotFoundHandler::new()),
         }
     }
 }
@@ -88,27 +115,41 @@ impl DefaultServeMux {
 pub struct Server {
     pool: ThreadPool,
     addr: String,
-    handler: Option<Arc<(dyn Handler + Send + Sync)>>,
+    handler: Arc<Mutex<(dyn HandlerServeMux + Send + Sync)>>,
 }
 
 pub type StreamBuffer = [u8; 1024];
 
 impl Server {
-    pub(crate) fn new(
+    pub fn new(
         size: usize,
         addr: String,
-        handler: Option<Arc<dyn Handler + Send + Sync>>,
+        handler: Option<Arc<Mutex<dyn HandlerServeMux + Send + Sync>>>,
     ) -> Self {
         let pool = ThreadPool::new(size).unwrap();
 
+        let hn: Arc<Mutex<dyn HandlerServeMux + Send + Sync>>;
+        let a = DefaultServeMux::new();
+        match handler {
+            Some(x) => hn = x,
+            None => hn = Arc::new(Mutex::new(DefaultServeMux::new())),
+        }
+
         Server {
             pool,
-            handler,
+            handler: hn,
             addr,
         }
     }
 
-    pub(crate) fn listen_and_serve(self) -> Result<(), ServerError> {
+    pub fn handle(&self, method: Method, pattern: String, handler: Arc<dyn Handler + Send + Sync>) {
+        self.handler
+            .lock()
+            .unwrap()
+            .handle(method, pattern, handler)
+    }
+
+    pub fn listen_and_serve(self) -> Result<(), ServerError> {
         let mut addr: &str = &self.addr;
 
         if addr == "" {
@@ -147,12 +188,7 @@ impl ServeHandler {
         rw: &mut dyn ResponseWriter,
         req: &Request,
     ) -> Result<(), ServerError> {
-        let mut handler: Arc<dyn Handler> = Arc::new(DefaultServeMux::new());
-        if let Some(x) = &self.server.handler {
-            handler = x.clone();
-        }
-
-        handler.serve_http(rw, req)
+        self.server.handler.lock().unwrap().serve_http(rw, req)
     }
 }
 
@@ -179,7 +215,7 @@ impl Handler for NotFoundHandler {
     }
 }
 impl NotFoundHandler {
-    fn new() -> Self {
+    const fn new() -> Self {
         NotFoundHandler {}
     }
 }
